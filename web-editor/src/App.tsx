@@ -1,6 +1,7 @@
 import './App.css';
 import { Toolbar } from './components/Toolbar';
 import { Canvas } from './components/Canvas';
+import { LottieCanvas } from './components/LottieCanvas';
 import { PreviewPanel } from './components/PreviewPanel';
 import { Timeline } from './components/Timeline';
 import { PropertiesPanel } from './components/PropertiesPanel';
@@ -10,6 +11,7 @@ import { useStore } from './store/useStore';
 
 function App() {
   const previewMode = useStore((state) => state.previewMode);
+  const sourceLottieJson = useStore((state) => state.project?.sourceLottieJson);
 
   return (
     <div className="app">
@@ -17,7 +19,7 @@ function App() {
       <div className="app-body">
         <LayersPanel />
         <div className="app-center">
-          {previewMode === 'editor' && <Canvas />}
+          {previewMode === 'editor' && (sourceLottieJson ? <LottieCanvas /> : <Canvas />)}
           {previewMode === 'lottie' && <PreviewPanel />}
           {previewMode === 'comparison' && (
             <div className="comparison-view">

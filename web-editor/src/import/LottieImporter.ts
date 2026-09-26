@@ -64,6 +64,8 @@ export class LottieImporter {
         layers,
         keyframes: allKeyframes,
         selectedLayerIds: [],
+        sourceLottieJson: lottie,
+        originalLottieJson: structuredClone(lottie),
       };
 
       return {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Layer } from '../models/Layer';
 import type { Keyframe, AnimatableProperty } from '../models/Keyframe';
+import type { LottieAnimation } from '../models/LottieTypes';
 
 const STORAGE_KEY = 'lottie-project-autosave';
 
@@ -20,6 +21,13 @@ interface ProjectState {
   selectedLayerId?: string;
   selectedLayerIds: string[]; // For multi-selection
   keyframes: Keyframe[]; // All keyframes in the project
+  // Original Lottie JSON as imported; kept intact because the editor model
+  // can't represent everything (precomps, image assets) and the preview
+  // must be able to play the unmodified file.
+  sourceLottieJson?: LottieAnimation;
+  // Pristine copy of the file as first imported — never modified by edits,
+  // templates or fixes. Used to restore/compare so the original is never lost.
+  originalLottieJson?: LottieAnimation;
 }
 
 /**

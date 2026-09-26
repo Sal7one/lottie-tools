@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import './PreviewPanel.css';
 import { useStore } from '../store/useStore';
 import { LottiePreview } from '../engine/LottiePreview';
 import { LottieExporter } from '../export/LottieExporter';
+import { extendLottieDuration, extractLottieColors, remapLottieColors } from '../engine/LottieModifier';
+import { TEMPLATES } from '../engine/LottieTemplates';
+import { FixPreviewDialog } from './FixPreviewDialog';
 import { toast } from 'sonner';
 
 export function PreviewPanel() {
   const project = useStore((state) => state.project);
   const setPreviewMode = useStore((state) => state.setPreviewMode);
+  const updateProjectSettings = useStore((state) => state.updateProjectSettings);
   const containerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const previewEngineRef = useRef<LottiePreview | null>(null);
@@ -18,7 +22,21 @@ export function PreviewPanel() {
   const [quality, setQuality] = useState<number>(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [extendSeconds, setExtendSeconds] = useState('6');
+  const [colorToReplace, setColorToReplace] = useState<string>('');
+  const [replacementColor, setReplacementColor] = useState('#ff0000');
+  const [fixDialogOpen, setFixDialogOpen] = useState(false);
   const lastUpdateTimeRef = useRef<number>(0);
+
+  const sourceJson = project?.sourceLottieJson;
+  const sourceColors = useMemo(
+    () => (sourceJson ? extractLottieColors(sourceJson) : []),
+    [sourceJson]
+  );
+  // Fall back to the most-used color until the user picks one
+  const selectedColor = sourceColors.some((c) => c.hex === colorToReplace)
+    ? colorToReplace
+    : sourceColors[0]?.hex ?? '';
 
   /**
    * Detect unsupported features and generate warnings
@@ -69,8 +87,13 @@ export function PreviewPanel() {
     setError(null);
 
     try {
-      // Export project to Lottie JSON
-      const lottieData = LottieExporter.exportToLottie(project);
+      // Prefer the original imported JSON over a re-export: files imported from
+      // Lottie JSON can contain precomps and image assets that the editor model
+      // doesn't support, and would be lost by a round-trip through the exporter.
+      // Clone so lottie-web's in-place mutations can't corrupt the stored source.
+      const lottieData = project.sourceLottieJson
+        ? structuredClone(project.sourceLottieJson)
+        : LottieExporter.exportToLottie(project);
 
       // Detect and set warnings
       const detectedWarnings = detectWarnings();
@@ -109,6 +132,129 @@ export function PreviewPanel() {
       console.error('Preview load error:', err);
     }
   }, [project, renderer, detectWarnings]);
+
+  /**
+   * Extend the raw source animation duration, holding a still frame at the end
+   */
+  const handleExtendDuration = () => {
+    if (!project?.sourceLottieJson) return;
+
+    const target = parseFloat(extendSeconds);
+    if (!Number.isFinite(target) || target <= 0) {
+      toast.error('Enter a valid duration in seconds');
+      return;
+    }
+
+    const result = extendLottieDuration(project.sourceLottieJson, target);
+    const newDuration = result.newOp / project.fps;
+    updateProjectSettings({
+      sourceLottieJson: result.json,
+      duration: newDuration,
+    });
+    toast.success(
+      `Duration extended to ${newDuration.toFixed(2)}s (${result.layersExtended} layer${
+        result.layersExtended === 1 ? '' : 's'
+      } extended to hold the final frame)`
+    );
+  };
+
+  /**
+   * Replace one vector color with another throughout the raw source
+   */
+  const handleRecolor = () => {
+    if (!project?.sourceLottieJson || !selectedColor) return;
+
+    const sourceInfo = sourceColors.find((c) => c.hex === selectedColor);
+    if (!sourceInfo) return;
+
+    const parse = (hex: string): [number, number, number] | null => {
+      const m = /^#([0-9a-f]{6})$/i.exec(hex);
+      if (!m) return null;
+      const n = parseInt(m[1], 16);
+      return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+    };
+    const target = parse(replacementColor);
+    if (!target) {
+      toast.error('Pick a replacement color');
+      return;
+    }
+
+    const result = remapLottieColors(
+      project.sourceLottieJson,
+      { r: sourceInfo.r, g: sourceInfo.g, b: sourceInfo.b },
+      { r: target[0], g: target[1], b: target[2] }
+    );
+    if (result.replaced === 0) {
+      toast.info('No occurrences of that color were found');
+      return;
+    }
+    updateProjectSettings({ sourceLottieJson: result.json });
+    toast.success(
+      `Recolored ${result.replaced} propert${result.replaced === 1 ? 'y' : 'ies'} to ${replacementColor}`
+    );
+  };
+
+  /**
+   * Apply a one-click template workflow to the raw source document
+   */
+  const handleApplyTemplate = (templateId: string) => {
+    if (!project?.sourceLottieJson) return;
+    const template = TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return;
+
+    try {
+      const result = template.apply(project.sourceLottieJson);
+      updateProjectSettings({
+        sourceLottieJson: result.json,
+        duration: result.json.op / project.fps,
+      });
+      toast.success(`${template.emoji} ${template.label}: ${result.summary}`);
+    } catch (error) {
+      console.error('Template error:', error);
+      toast.error(`Template "${template.label}" failed — see console for details.`);
+    }
+  };
+
+  /**
+   * Restore the pristine imported file, discarding edits/templates/fixes
+   */
+  const handleRestoreOriginal = () => {
+    if (!project?.originalLottieJson) return;
+    if (!window.confirm('Restore the original imported file? All edits, templates and fixes applied to it will be discarded.')) {
+      return;
+    }
+    const original = project.originalLottieJson;
+    updateProjectSettings({
+      sourceLottieJson: original,
+      duration: original.op / project.fps,
+    });
+    toast.success('Original file restored — edits and fixes discarded');
+  };
+
+  /**
+   * Approve the fixed document from the Fix Preview dialog:
+   * it has already been downloaded; also make it the project source
+   */
+  const handleFixApproved = (json: typeof project.sourceLottieJson) => {
+    if (!json || !project) return;
+    updateProjectSettings({ sourceLottieJson: json, duration: json.op / project.fps });
+    setFixDialogOpen(false);
+    toast.success('Fixed file exported and applied to the project');
+  };
+
+  /**
+   * Reload the preview whenever the raw source JSON is replaced
+   * (duration extension, recoloring)
+   */
+  const lastSourceRef = useRef(project?.sourceLottieJson);
+  useEffect(() => {
+    if (project?.sourceLottieJson && project.sourceLottieJson !== lastSourceRef.current) {
+      lastSourceRef.current = project.sourceLottieJson;
+      loadPreview();
+    } else {
+      lastSourceRef.current = project?.sourceLottieJson;
+    }
+  }, [project?.sourceLottieJson, loadPreview]);
 
   /**
    * Handle enterFrame event from lottie-web
@@ -357,6 +503,98 @@ export function PreviewPanel() {
             ))}
           </ul>
         </div>
+      )}
+
+      {project?.sourceLottieJson && !isFullscreen && (
+        <div className="lottie-source-tools">
+          <div className="tools-row">
+            <label>
+              Extend to
+              <input
+                type="number"
+                min="0.1"
+                step="0.5"
+                value={extendSeconds}
+                onChange={(e) => setExtendSeconds(e.target.value)}
+                aria-label="Extend duration seconds"
+              />
+              seconds
+            </label>
+            <button onClick={handleExtendDuration} className="btn-tool">
+              Extend Duration
+            </button>
+          </div>
+          {sourceColors.length > 0 && (
+            <div className="tools-row">
+              <label>
+                Color
+                <select
+                  value={selectedColor}
+                  onChange={(e) => setColorToReplace(e.target.value)}
+                  aria-label="Color to replace"
+                >
+                  {sourceColors.map((c) => (
+                    <option key={c.hex} value={c.hex}>
+                      {c.hex} ({c.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                New
+                <input
+                  type="color"
+                  value={replacementColor}
+                  onChange={(e) => setReplacementColor(e.target.value)}
+                  aria-label="New color"
+                />
+              </label>
+              <button onClick={handleRecolor} className="btn-tool">
+                Apply Recolor
+              </button>
+            </div>
+          )}
+          <p className="tools-note">
+            Edits apply to the original Lottie JSON (vector fills/strokes only — colors baked
+            into raster images are not affected).
+          </p>
+          <div className="tools-row templates-row">
+            {TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                className="btn-template"
+                title={t.description}
+                onClick={() => handleApplyTemplate(t.id)}
+              >
+                {t.emoji} {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="tools-row">
+            <button className="btn-tool btn-fix" onClick={() => setFixDialogOpen(true)}>
+              🔧 Fix &amp; Export
+            </button>
+            {project.originalLottieJson && (
+              <button className="btn-tool btn-restore" onClick={handleRestoreOriginal}>
+                ↩️ Restore Original
+              </button>
+            )}
+            <span className="tools-note">
+              Analyzes the file for player-hostile patterns, previews the fixed result, then exports.
+              The original file is always preserved.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {fixDialogOpen && project?.sourceLottieJson && (
+        <FixPreviewDialog
+          sourceJson={project.sourceLottieJson}
+          originalJson={project.originalLottieJson ?? project.sourceLottieJson}
+          filename={project.name || 'animation'}
+          onClose={() => setFixDialogOpen(false)}
+          onApprove={handleFixApproved}
+        />
       )}
 
       <div className="preview-container">

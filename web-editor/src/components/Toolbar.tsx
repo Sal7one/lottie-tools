@@ -36,19 +36,23 @@ export function Toolbar() {
       return;
     }
 
-    if (project.layers.length === 0) {
+    // For Lottie imports, export the original document (with any duration/color
+    // edits applied) — the editor model can't represent precomps and images,
+    // so re-deriving from it would lose most of the file.
+    if (!project.sourceLottieJson && project.layers.length === 0) {
       alert('Project has no layers. Please add some content before exporting.');
       return;
     }
 
     try {
-      // Export to Lottie format
-      const lottie = LottieExporter.exportToLottie(project);
+      const lottie = project.sourceLottieJson ?? LottieExporter.exportToLottie(project);
 
-      // Validate before showing dialog
+      // Validate before showing dialog. A raw imported file stays downloadable
+      // even if our validator is stricter than real players — the message shows
+      // in the dialog so the user can decide.
       const validation = LottieValidator.validateWithMessage(lottie);
 
-      if (!validation.valid) {
+      if (!project.sourceLottieJson && !validation.valid) {
         alert(`Export validation failed:\n\n${validation.message}`);
         return;
       }
@@ -93,7 +97,10 @@ export function Toolbar() {
             {previewMode === 'lottie' && '⚖️ Compare'}
             {previewMode === 'comparison' && '✏️ Editor'}
           </button>
-          <button onClick={handleExport} disabled={!project || project.layers.length === 0}>
+          <button
+            onClick={handleExport}
+            disabled={!project || (!project.sourceLottieJson && project.layers.length === 0)}
+          >
             Export to Lottie
           </button>
         </div>

@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Faithful Lottie playback for imported files**: The editor canvas and preview now play the
+  *original imported JSON* instead of a lossy round-trip through the editor model. Files built
+  from precomps (`ty: 0`) and embedded raster images (`ty: 2`) — previously dropped at import —
+  now render exactly as they do on lottiefiles.com.
+  - New `LottieCanvas` component plays the source document in the editor, synced with the timeline
+  - `PreviewPanel` prefers `project.sourceLottieJson` over the re-exported project
+  - `LottieImporter` preserves the untouched source JSON on the project (cloned before playback)
+
+- **Lottie source tools (Preview panel)** — direct edits to the imported document:
+  - **Extend Duration**: stretch the composition to N seconds holding a still frame of the final
+    design (layers alive at the end keep their last keyframe values — a common workaround for
+    native players that stall on short animations)
+  - **Color remap**: replace any vector fill/stroke color throughout the document, with a
+    detected-colors dropdown showing usage counts (raster image colors are not affected)
+
+- **One-click template workflows** (10 templates): Extend & Hold 6s, Slow Motion, Fast Forward,
+  Intro Delay, Fade Out Ending, Native Safe Mode (clamps timing overruns + strips non-standard
+  keys), Clean Export (strips junk keys + replaces NaN/Infinity), Invert Colors, Grayscale,
+  Boomerang Loop.
+
+- **Fix & Export** (`LottieFixer` + `FixPreviewDialog`): scans the document for
+  player-hostile patterns and previews the fixed animation before export. The dialog lists
+  **issues found** (with occurrence counts and checkboxes) and a **"What will be fixed"**
+  change list — concrete per-change lines like `Layer "Left 14": op 230 → 221` — that updates
+  live as fixes are toggled. Nothing is applied until you export. Detected issues:
+  - Layers whose in/out points overrun their composition (a known cause of Android/iOS stalls)
+  - Non-standard top-level keys (`props`, `markers`, `meta`, …)
+  - Keyframes missing start values (`s`) from old bodymovin exports
+  - NaN / Infinity numbers anywhere in the document
+  - Precomp/image layers referencing missing assets
+  - Vector colors outside the 0–1 normalized range
+  - Shorthand or malformed hex colors (`#000`, missing `#`, `0x…`, CSS alpha-last `#RRGGBBAA`)
+    normalized to `#RRGGBB` / `#AARRGGBB` — the only forms Android's `Color.parseColor`
+    accepts on older API levels (see airbnb/lottie-android#1455)
+
+- Export now writes the original (edited) document for imported files; the Export button is
+  enabled for imported projects even when the editor model has no editable layers.
+
+- **Original file is always preserved**: every import keeps a pristine copy
+  (`originalLottieJson`) alongside the editable working copy. Edits, templates and fixes never
+  touch it; a **⬇ Download Original** button in the fix dialog and a **↩️ Restore Original**
+  button in the tools panel (with confirmation) let you retrieve or revert to it at any time.
+
+### Changed
+- `ProjectState` gains an optional `sourceLottieJson` field (auto-persisted via localStorage)
+
 ## [0.2.0] - 2026-01-07
 
 ### Added

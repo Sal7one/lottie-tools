@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import lottie from 'lottie-web';
 import { PreviewPanel } from './PreviewPanel';
 import { useStore } from '../store/useStore';
 import type { Layer } from '../models/Layer';
@@ -207,5 +208,149 @@ describe('PreviewPanel', () => {
     const { container } = render(<PreviewPanel />);
     const info = container.querySelector('.preview-info');
     expect(info).toBeInTheDocument();
+  });
+
+  it('should pass the original source JSON to lottie-web when available', () => {
+    const rawSource = {
+      v: '5.12.1',
+      fr: 60,
+      ip: 0,
+      op: 221,
+      w: 375,
+      h: 820,
+      nm: 'Original Raw Animation',
+      assets: [{ id: 'image_0', w: 105, h: 138, u: '', p: 'data:image/png;base64,AAA' }],
+      layers: [],
+    } as any;
+    vi.mocked(lottie.loadAnimation).mockClear();
+    useStore.setState({
+      project: {
+        name: 'Test Project',
+        width: 800,
+        height: 600,
+        fps: 30,
+        duration: 5,
+        loop: true,
+        currentTime: 0,
+        isPlaying: false,
+        layers: [mockLayer],
+        selectedLayerId: 'layer-1',
+        selectedLayerIds: ['layer-1'],
+        keyframes: [],
+        sourceLottieJson: rawSource,
+      },
+    });
+
+    render(<PreviewPanel />);
+
+    expect(vi.mocked(lottie.loadAnimation)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        animationData: expect.objectContaining({ nm: 'Original Raw Animation' }),
+      })
+    );
+  });
+
+  it('should fall back to exported project JSON when no source JSON exists', () => {
+    vi.mocked(lottie.loadAnimation).mockClear();
+
+    render(<PreviewPanel />);
+
+    expect(vi.mocked(lottie.loadAnimation)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        animationData: expect.objectContaining({ nm: 'Test Project' }),
+      })
+    );
+  });
+
+  describe('Lottie source tools', () => {
+    const rawSource = {
+      v: '5.12.1',
+      fr: 60,
+      ip: 0,
+      op: 221,
+      w: 375,
+      h: 820,
+      nm: 'Sample',
+      layers: [
+        {
+          ty: 4,
+          nm: 'Shape',
+          ind: 1,
+          ip: 0,
+          op: 221,
+          st: 0,
+          ks: {
+            p: { a: 0, k: [0, 0] },
+            a: { a: 0, k: [0, 0] },
+            s: { a: 0, k: [100, 100] },
+            r: { a: 0, k: 0 },
+            o: { a: 0, k: 100 },
+          },
+          shapes: [
+            { ty: 'fl', nm: 'Fill', c: { a: 0, k: [1, 0, 0, 1] }, o: { a: 0, k: 100 } },
+          ],
+        },
+      ],
+      assets: [],
+    };
+
+    it('should show source tools when the project has raw source JSON', () => {
+      useStore.setState({
+        project: {
+          name: 'Test Project',
+          width: 375,
+          height: 820,
+          fps: 60,
+          duration: 3.68,
+          loop: true,
+          currentTime: 0,
+          isPlaying: false,
+          layers: [],
+          selectedLayerIds: [],
+          keyframes: [],
+          sourceLottieJson: rawSource as any,
+        },
+      });
+
+      render(<PreviewPanel />);
+
+      expect(screen.getByRole('button', { name: /extend duration/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /apply recolor/i })).toBeInTheDocument();
+    });
+
+    it('should hide source tools when the project has no raw source JSON', () => {
+      render(<PreviewPanel />);
+
+      expect(screen.queryByRole('button', { name: /extend duration/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /apply recolor/i })).not.toBeInTheDocument();
+    });
+
+    it('should extend the animation duration to the target seconds', () => {
+      useStore.setState({
+        project: {
+          name: 'Test Project',
+          width: 375,
+          height: 820,
+          fps: 60,
+          duration: 3.68,
+          loop: true,
+          currentTime: 0,
+          isPlaying: false,
+          layers: [],
+          selectedLayerIds: [],
+          keyframes: [],
+          sourceLottieJson: rawSource as any,
+        },
+      });
+
+      render(<PreviewPanel />);
+
+      const button = screen.getByRole('button', { name: /extend duration/i });
+      button.click();
+
+      const state = useStore.getState();
+      expect(state.project?.duration).toBe(6);
+      expect((state.project?.sourceLottieJson as any)?.op).toBe(360);
+    });
   });
 });

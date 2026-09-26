@@ -93,6 +93,27 @@ describe('LottieImporter', () => {
     });
   });
 
+  describe('Raw Source Preservation', () => {
+    it('should preserve the original Lottie JSON on the project for preview', () => {
+      const lottie: LottieAnimation = {
+        v: '5.12.1',
+        fr: 60,
+        ip: 0,
+        op: 221,
+        w: 375,
+        h: 820,
+        nm: 'Original Raw Animation',
+        assets: [{ id: 'image_0', w: 105, h: 138, u: '', p: 'data:image/png;base64,AAA' }],
+        layers: [],
+      };
+      const result = LottieImporter.importFromLottie(lottie);
+      expect(result.success).toBe(true);
+      expect(result.project?.sourceLottieJson).toBe(lottie);
+      // Embedded assets must survive untouched so the preview can render images
+      expect(result.project?.sourceLottieJson?.assets).toHaveLength(1);
+    });
+  });
+
   describe('Layer Conversion', () => {
     it('should import shape layer', () => {
       const lottie: LottieAnimation = {

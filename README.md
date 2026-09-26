@@ -35,6 +35,10 @@ An open-source web-based animation editor for creating and editing Lottie animat
 - 🔍 **Fullscreen Preview** - Immersive preview mode with keyboard shortcuts (F/ESC)
 - ⚙️ **Quality Settings** - Preview at 0.5x, 1x, or 2x quality for performance testing
 - ⚠️ **Warning System** - Automatic detection of performance and compatibility issues
+- 🎞️ **Faithful Imported Playback** - Imported Lottie files play from their original JSON (precomps, images and all) right on the editor canvas — no lossy round-trip
+- 🎛️ **Lottie Source Tools** - Extend duration with a held still frame; remap vector colors across the whole document (with detected-colors dropdown)
+- ⚡ **10 One-Click Templates** - Extend & Hold, Slow Motion, Fast Forward, Intro Delay, Fade Out, Native Safe Mode, Clean Export, Invert Colors, Grayscale, Boomerang Loop
+- 🔧 **Fix & Export** - Scans for player-hostile patterns (timing overruns, non-standard keys, missing keyframe starts, NaN/Infinity, dangling assets, out-of-range colors, malformed hex like `#000`), previews the fixed animation live, then exports on approval — see [the changelog](web-editor/CHANGELOG.md) for the full issue list
 
 #### 🚧 In Progress:
 - 💾 **Project Save/Load** - Persist projects to local storage with versioning
@@ -129,6 +133,25 @@ npm test
 # Check test coverage
 npm run coverage
 ```
+
+### Serving on Your LAN (phones, tablets, other computers)
+
+By default Vite only binds to `localhost`. To open the editor from another
+device on the same network:
+
+```bash
+cd web-editor
+npm run dev -- --host
+```
+
+Vite prints the LAN URL (e.g. `http://192.168.100.98:5173/lottie-tools/`) —
+open it in any browser on that network. If the page won't load from the other
+device but works locally, allow Node.js through Windows Firewall (or your
+OS equivalent) for private networks.
+
+> Tip: after heavy hot-reload editing sessions, a stale module cache can serve
+> broken code. Restart the dev server and hard-refresh (Ctrl+Shift+R) if the
+> page ever comes up blank.
 
 ### CLI Converter (Available Now)
 
